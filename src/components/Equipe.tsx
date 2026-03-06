@@ -1,8 +1,12 @@
 import React, { useState } from 'react';
 import { UserPlus, ShieldCheck } from 'lucide-react';
 import { UserProfile } from '../types';
-import { supabase } from '../lib/supabase';
+import { createClient } from '@supabase/supabase-js';
 import { handleError } from '../lib/utils';
+
+// Cliente temporário para cadastro sem deslogar o admin
+const SB_URL = import.meta.env.VITE_SUPABASE_URL;
+const SB_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 interface EquipeProps {
   profile: UserProfile | null;
@@ -28,32 +32,29 @@ export function Equipe({ profile }: EquipeProps) {
 
     setLoading(true);
     try {
-      const { data, error } = await supabase.auth.signUp({
+      // Criar um cliente Supabase que não persiste sessão para não deslogar o admin
+      const tempSupabase = createClient(SB_URL, SB_KEY, {
+        auth: { persistSession: false }
+      });
+
+      const { data, error } = await tempSupabase.auth.signUp({
         email: formData.email.trim(),
         password: formData.password,
         options: {
           data: {
-            role: formData.role,
-            empresa_id: profile.empresa_id,
-            empresa_nome: profile.empresa_nome
+            intended_role: formData.role,
+            company_name: profile.empresa_nome,
+            // empresa_id será vinculado pelo trigger handle_new_user usando o company_name
           }
         }
       });
 
       if (error) throw error;
+      
       if (data.user) {
-        // Create profile for the new staff member
-        const { error: perfilError } = await supabase
-          .from('perfis')
-          .insert({
-            id: data.user.id,
-            empresa_id: profile.empresa_id,
-            role: formData.role,
-            empresa_nome: profile.empresa_nome
-          });
-
-        if (perfilError) throw perfilError;
-
+        // O trigger 'on_auth_user_created' no banco de dados cuidará 
+        // de criar o perfil automaticamente na tabela 'public.perfis'
+        
         if (!data.session) {
           alert('✅ Colaborador cadastrado! Ele deve verificar o e-mail para confirmar a conta antes de acessar.');
         } else {
