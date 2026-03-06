@@ -1,0 +1,7 @@
+{
+  "name": "Remix: Vertical Locações - Oficina Smart",
+  "description": "Sistema inteligente para gestão de oficinas e locações com OCR, dashboard e sincronização em nuvem.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}

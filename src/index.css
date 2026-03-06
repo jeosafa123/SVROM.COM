@@ -1,0 +1,69 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Segoe UI", system-ui, -apple-system, sans-serif;
+}
+
+:root {
+  --primary: #ffcc00;
+  --bg-body: #0a0c10;
+  --bg-sidebar: #12151a;
+  --bg-card: #1a1e26;
+  --text-main: #e6eef6;
+  --text-muted: #8e9299;
+  --border: #2a2f3a;
+  --success: #22c55e;
+  --danger: #ef4444;
+  --warning: #f59e0b;
+  --input-bg: #0d1117;
+  --f-mono: 'JetBrains Mono', 'Roboto Mono', monospace;
+}
+
+[data-theme="light"] {
+  --primary: #d97706;
+  --bg-body: #f5f7fa;
+  --bg-sidebar: #ffffff;
+  --bg-card: #ffffff;
+  --text-main: #1a1e26;
+  --text-muted: #64748b;
+  --border: #e2e8f0;
+  --input-bg: #f8fafc;
+}
+
+@layer base {
+  body {
+    @apply bg-[var(--bg-body)] text-[var(--text-main)] transition-colors duration-300 antialiased;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  }
+}
+
+.font-mono {
+  font-family: var(--f-mono);
+}
+
+/* Hardware Tool Aesthetic */
+.card-hardware {
+  @apply bg-[var(--bg-card)] border border-[var(--border)] rounded-xl shadow-2xl;
+  box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+}
+
+.input-hardware {
+  @apply w-full bg-[var(--input-bg)] border border-[var(--border)] text-white p-3.5 rounded-xl outline-none focus:border-[var(--primary)] transition-all;
+}
+
+.btn-hardware-primary {
+  @apply bg-[var(--primary)] text-black font-black py-4 rounded-xl uppercase tracking-widest flex items-center justify-center gap-2 hover:brightness-110 active:scale-[0.98] transition-all;
+}
+
+.btn-hardware-outline {
+  @apply bg-transparent border border-[var(--primary)] text-[var(--primary)] font-black py-4 rounded-xl uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-[var(--primary)] hover:text-black transition-all;
+}
+
+@keyframes zoomBG {
+  from { transform: scale(1); }
+  to { transform: scale(1.1); }
+}
+
+.animate-zoom-bg {
+  animation: zoomBG 20s infinite alternate;
+}
