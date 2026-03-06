@@ -38,7 +38,7 @@ export function Dashboard({ cloudData, profile, userEmail }: DashboardProps) {
     const uniqueTechs = new Map();
     cloudData.forEach(i => {
       if (i.tecnico && i.tecnico_perfil) {
-        uniqueTechs.set(i.tecnico, i.tecnico_perfil.empresa_nome || i.tecnico);
+        uniqueTechs.set(i.tecnico, i.tecnico_perfil.nome || i.tecnico_perfil.empresa_nome || i.tecnico);
       }
     });
     return Array.from(uniqueTechs.entries()).map(([id, name]) => ({ id, name }));

@@ -118,7 +118,7 @@ export function Layout({ children, profile, activeSection, setActiveSection, onL
           
           <div className="mt-4 p-4 bg-black/20 rounded-xl border border-white/5">
             <div className="text-[var(--text-main)] text-xs font-black uppercase tracking-widest truncate">
-              {userEmail.split('@')[0]}
+              {profile?.nome || userEmail.split('@')[0]}
             </div>
             <div className="text-[var(--primary)] text-[9px] font-black uppercase tracking-[0.2em] mt-1 opacity-80">
               {profile?.role === 'admin' ? 'ADMINISTRADOR' : 'TÉCNICO'}

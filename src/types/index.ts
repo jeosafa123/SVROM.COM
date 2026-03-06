@@ -1,5 +1,6 @@
 export interface UserProfile {
   id: string;
+  nome: string | null;
   empresa_id: string | null;
   role: 'admin' | 'tecnico' | 'cliente';
   empresa_nome: string | null;

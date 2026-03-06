@@ -32,7 +32,7 @@ export function Nuvem({ profile, userEmail, localData, cloudData, setLocalData, 
     const uniqueTechs = new Map();
     cloudData.forEach(i => {
       if (i.tecnico && i.tecnico_perfil) {
-        uniqueTechs.set(i.tecnico, i.tecnico_perfil.empresa_nome || i.tecnico);
+        uniqueTechs.set(i.tecnico, i.tecnico_perfil.nome || i.tecnico_perfil.empresa_nome || i.tecnico);
       }
     });
     return Array.from(uniqueTechs.entries()).map(([id, name]) => ({ id, name }));
@@ -55,8 +55,8 @@ export function Nuvem({ profile, userEmail, localData, cloudData, setLocalData, 
   }, [localData, techFilter, profile]);
 
   const getTechName = (item: Servico) => {
-    if (item.tecnico === profile?.id) return 'VOCÊ';
-    return item.tecnico_perfil?.empresa_nome || item.tecnico?.split('-')[0] || '---';
+    if (item.tecnico === profile?.id) return profile.nome || 'VOCÊ';
+    return item.tecnico_perfil?.nome || item.tecnico_perfil?.empresa_nome || item.tecnico?.split('-')[0] || '---';
   };
 
   const handleSync = async () => {
@@ -112,7 +112,7 @@ export function Nuvem({ profile, userEmail, localData, cloudData, setLocalData, 
       Horas: i.horas,
       'Valor (R$)': i.valor,
       Identificação: i.identificacao ? 'SIM' : 'NÃO',
-      Técnico: i.tecnico === profile?.id ? profile.empresa_nome : (i.tecnico_perfil?.empresa_nome || i.tecnico),
+      Técnico: i.tecnico === profile?.id ? (profile.nome || profile.empresa_nome) : (i.tecnico_perfil?.nome || i.tecnico_perfil?.empresa_nome || i.tecnico),
       Data: i.data || (i.created_at ? formatDate(i.created_at) : 'N/A')
     }));
 
@@ -143,7 +143,7 @@ export function Nuvem({ profile, userEmail, localData, cloudData, setLocalData, 
       i.om,
       i.patrimonio || 'S/N',
       i.equipamento,
-      i.tecnico === profile?.id ? (profile.empresa_nome || 'VOCÊ') : (i.tecnico_perfil?.empresa_nome || '---'),
+      i.tecnico === profile?.id ? (profile.nome || profile.empresa_nome || 'VOCÊ') : (i.tecnico_perfil?.nome || i.tecnico_perfil?.empresa_nome || '---'),
       formatCurrency(i.valor)
     ]);
 

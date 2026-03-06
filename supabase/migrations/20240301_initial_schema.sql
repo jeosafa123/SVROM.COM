@@ -18,6 +18,7 @@ CREATE TABLE public.empresas (
 -- 4. Tabela de Perfis (Vinculada ao Auth do Supabase)
 CREATE TABLE public.perfis (
     id UUID PRIMARY KEY REFERENCES auth.users ON DELETE CASCADE,
+    nome TEXT,
     empresa_id UUID REFERENCES public.empresas(id) ON DELETE SET NULL,
     role TEXT CHECK (role IN ('admin', 'tecnico', 'cliente')) DEFAULT 'tecnico',
     empresa_nome TEXT,
@@ -90,14 +91,16 @@ $$;
 
 -- 11. Trigger para criar perfil automático no cadastro
 CREATE OR REPLACE FUNCTION public.handle_new_user()
-RETURNS trigger AS $$
+RETURNS trigger AS $
 DECLARE
   company_id UUID;
   company_name TEXT;
   user_role TEXT;
+  user_name TEXT;
 BEGIN
   company_name := COALESCE(new.raw_user_meta_data->>'company_name', 'Empresa Individual');
   user_role := COALESCE(new.raw_user_meta_data->>'intended_role', 'tecnico');
+  user_name := COALESCE(new.raw_user_meta_data->>'full_name', new.email);
 
   -- Tenta encontrar a empresa pelo nome
   SELECT id INTO company_id FROM public.empresas WHERE nome = company_name LIMIT 1;
@@ -107,16 +110,17 @@ BEGIN
     INSERT INTO public.empresas (nome) VALUES (company_name) RETURNING id INTO company_id;
   END IF;
 
-  INSERT INTO public.perfis (id, empresa_id, role, empresa_nome)
+  INSERT INTO public.perfis (id, nome, empresa_id, role, empresa_nome)
   VALUES (
     new.id,
+    user_name,
     company_id,
     user_role,
     company_name
   );
   RETURN new;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- Garantir que o trigger seja criado apenas se não existir
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
@@ -167,7 +171,7 @@ BEGIN
       now(),
       now(),
       '{"provider":"email","providers":["email"]}',
-      jsonb_build_object('company_name', 'Vertical Locações - Matriz', 'intended_role', 'admin'),
+      jsonb_build_object('company_name', 'Vertical Locações - Matriz', 'intended_role', 'admin', 'full_name', 'Administrador Vertical'),
       now(),
       now(),
       '',
@@ -179,9 +183,10 @@ BEGIN
 
     -- O trigger handle_new_user() cuidará de criar o perfil automaticamente
     -- mas vamos garantir que o perfil esteja correto caso o trigger falhe ou já exista
-    INSERT INTO public.perfis (id, empresa_id, role, empresa_nome)
-    VALUES (new_user_id, new_empresa_id, 'admin', 'Vertical Locações - Matriz')
+    INSERT INTO public.perfis (id, nome, empresa_id, role, empresa_nome)
+    VALUES (new_user_id, 'Administrador Vertical', new_empresa_id, 'admin', 'Vertical Locações - Matriz')
     ON CONFLICT (id) DO UPDATE SET 
+      nome = 'Administrador Vertical',
       role = 'admin',
       empresa_id = new_empresa_id,
       empresa_nome = 'Vertical Locações - Matriz';

@@ -115,6 +115,7 @@ export default function App() {
 
           const recoveredProfile: UserProfile = {
             id: userId,
+            nome: meta.full_name || user.email?.split('@')[0] || 'Usuário',
             role: meta.intended_role || 'tecnico',
             empresa_id: empresaId,
             empresa_nome: meta.company_name || 'Empresa'
@@ -125,6 +126,7 @@ export default function App() {
           if (empresaId) {
             await supabase.from('perfis').upsert({
               id: userId,
+              nome: recoveredProfile.nome,
               empresa_id: empresaId,
               role: recoveredProfile.role,
               empresa_nome: recoveredProfile.empresa_nome
@@ -136,6 +138,15 @@ export default function App() {
       }
 
       setProfile(data);
+      
+      // Se o perfil existe mas o nome está vazio, tenta atualizar com o metadado
+      if (!data.nome && user?.user_metadata?.full_name) {
+        await supabase
+          .from('perfis')
+          .update({ nome: user.user_metadata.full_name })
+          .eq('id', userId);
+        setProfile({ ...data, nome: user.user_metadata.full_name });
+      }
       
       // Verificação extra: se o metadado diz que é admin mas o perfil não, tenta atualizar
       if (user?.user_metadata?.intended_role === 'admin' && data.role !== 'admin') {
@@ -169,6 +180,7 @@ export default function App() {
         .select(`
           *,
           tecnico_perfil:perfis!servicos_tecnico_fkey (
+            nome,
             empresa_nome,
             role
           )

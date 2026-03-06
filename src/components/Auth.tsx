@@ -11,6 +11,7 @@ export function Auth({ onLogin }: AuthProps) {
   const [isRegister, setIsRegister] = useState(false);
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
+    nome: '',
     email: '',
     password: '',
     empresa: '',
@@ -31,6 +32,7 @@ export function Auth({ onLogin }: AuthProps) {
           password: formData.password,
           options: {
             data: {
+              full_name: formData.nome.trim(),
               role: 'admin',
               intended_role: 'admin',
               company_name: formData.empresa
@@ -103,17 +105,30 @@ export function Auth({ onLogin }: AuthProps) {
 
         <form onSubmit={handleAuth} className="space-y-5">
           {isRegister && (
-            <div className="space-y-1.5">
-              <label className="text-[var(--text-muted)] text-[10px] font-black uppercase tracking-widest ml-1">Nome da Empresa</label>
-              <input
-                type="text"
-                placeholder="Ex: Oficina Smart"
-                className="input-hardware"
-                value={formData.empresa}
-                onChange={e => setFormData({ ...formData, empresa: e.target.value })}
-                required
-              />
-            </div>
+            <>
+              <div className="space-y-1.5">
+                <label className="text-[var(--text-muted)] text-[10px] font-black uppercase tracking-widest ml-1">Seu Nome</label>
+                <input
+                  type="text"
+                  placeholder="Seu nome completo"
+                  className="input-hardware"
+                  value={formData.nome}
+                  onChange={e => setFormData({ ...formData, nome: e.target.value })}
+                  required
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-[var(--text-muted)] text-[10px] font-black uppercase tracking-widest ml-1">Nome da Empresa</label>
+                <input
+                  type="text"
+                  placeholder="Ex: Oficina Smart"
+                  className="input-hardware"
+                  value={formData.empresa}
+                  onChange={e => setFormData({ ...formData, empresa: e.target.value })}
+                  required
+                />
+              </div>
+            </>
           )}
 
           <div className="space-y-1.5">

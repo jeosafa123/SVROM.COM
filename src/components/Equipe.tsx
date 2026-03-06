@@ -15,6 +15,7 @@ interface EquipeProps {
 export function Equipe({ profile }: EquipeProps) {
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
+    nome: '',
     email: '',
     password: '',
     role: 'tecnico',
@@ -24,6 +25,7 @@ export function Equipe({ profile }: EquipeProps) {
   const handleAddStaff = async (e: React.FormEvent) => {
     e.preventDefault();
     if (profile?.role !== 'admin') return alert('Acesso negado');
+    if (!profile?.empresa_nome) return alert('⚠️ Erro: Sua conta não está vinculada a uma empresa. Não é possível cadastrar colaboradores.');
 
     if (formData.role === 'tecnico' && formData.token !== '20') return alert('Para TÉCNICO o token é 20');
     if (formData.role === 'cliente' && formData.token !== '30') return alert('Para CLIENTE o token é 30');
@@ -42,6 +44,7 @@ export function Equipe({ profile }: EquipeProps) {
         password: formData.password,
         options: {
           data: {
+            full_name: formData.nome.trim(),
             intended_role: formData.role,
             company_name: profile.empresa_nome,
             // empresa_id será vinculado pelo trigger handle_new_user usando o company_name
@@ -60,7 +63,7 @@ export function Equipe({ profile }: EquipeProps) {
         } else {
           alert('✅ Colaborador cadastrado com sucesso!');
         }
-        setFormData({ email: '', password: '', role: 'tecnico', token: '' });
+        setFormData({ nome: '', email: '', password: '', role: 'tecnico', token: '' });
       }
     } catch (err: any) {
       handleError(err, 'Cadastro de Colaborador');
@@ -83,6 +86,18 @@ export function Equipe({ profile }: EquipeProps) {
         </div>
 
         <form onSubmit={handleAddStaff} className="space-y-6">
+          <div className="space-y-1.5">
+            <label className="text-[var(--text-muted)] text-[10px] font-black uppercase tracking-widest ml-1">Nome Completo</label>
+            <input 
+              type="text" 
+              placeholder="Nome do colaborador"
+              value={formData.nome}
+              onChange={e => setFormData({ ...formData, nome: e.target.value })}
+              className="input-hardware"
+              required
+            />
+          </div>
+
           <div className="space-y-1.5">
             <label className="text-[var(--text-muted)] text-[10px] font-black uppercase tracking-widest ml-1">E-mail de Acesso</label>
             <input 
