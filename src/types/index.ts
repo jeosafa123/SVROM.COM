@@ -23,6 +23,7 @@ export interface Servico {
   created_at?: string;
   data?: string; // For local storage compatibility
   tecnico_perfil?: {
+    nome: string;
     empresa_nome: string;
     role: string;
   };

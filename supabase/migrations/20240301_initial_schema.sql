@@ -91,7 +91,7 @@ $$;
 
 -- 11. Trigger para criar perfil automático no cadastro
 CREATE OR REPLACE FUNCTION public.handle_new_user()
-RETURNS trigger AS $
+RETURNS trigger AS $$
 DECLARE
   company_id UUID;
   company_name TEXT;
@@ -120,7 +120,7 @@ BEGIN
   );
   RETURN new;
 END;
-$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- Garantir que o trigger seja criado apenas se não existir
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;

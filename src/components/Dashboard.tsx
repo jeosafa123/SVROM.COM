@@ -64,12 +64,18 @@ export function Dashboard({ cloudData, profile, userEmail }: DashboardProps) {
 
   const chartData = useMemo(() => {
     const days: Record<string, number> = {};
-    filteredData.forEach(i => {
+    
+    // Sort data by created_at first
+    const sortedData = [...filteredData].sort((a, b) => {
+      return new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime();
+    });
+
+    sortedData.forEach(i => {
       const date = i.created_at ? formatDate(i.created_at) : 'N/A';
       days[date] = (days[date] || 0) + 1;
     });
 
-    const labels = Object.keys(days).reverse();
+    const labels = Object.keys(days);
     const values = labels.map(l => days[l]);
 
     return {

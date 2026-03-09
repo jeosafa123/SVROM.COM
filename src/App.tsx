@@ -22,10 +22,8 @@ export default function App() {
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
 
   useEffect(() => {
-    // Initial loading simulation
-    const timer = setTimeout(() => {
-      checkUser();
-    }, 2000);
+    // Initial loading
+    checkUser();
 
     // Load local data
     const savedData = localStorage.getItem('oficina_db');
@@ -46,7 +44,6 @@ export default function App() {
       .subscribe();
 
     return () => {
-      clearTimeout(timer);
       subscription.unsubscribe();
     };
   }, []);
@@ -227,6 +224,7 @@ export default function App() {
             localStorage.setItem('oficina_db', JSON.stringify(data));
           }}
           onNavigateToNuvem={() => setActiveSection('nuvem')}
+          onRefresh={fetchCloudData}
         />
       )}
       {activeSection === 'nuvem' && (

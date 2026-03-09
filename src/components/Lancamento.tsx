@@ -13,9 +13,10 @@ interface LancamentoProps {
   localData: Servico[];
   setLocalData: (data: Servico[]) => void;
   onNavigateToNuvem: () => void;
+  onRefresh: () => Promise<void>;
 }
 
-export function Lancamento({ profile, userEmail, localData, setLocalData, onNavigateToNuvem }: LancamentoProps) {
+export function Lancamento({ profile, userEmail, localData, setLocalData, onNavigateToNuvem, onRefresh }: LancamentoProps) {
   const [timerActive, setTimerActive] = useState(false);
   const [timerSeconds, setTimerSeconds] = useState(0);
   const [isIdent, setIsIdent] = useState(false);
@@ -120,9 +121,9 @@ export function Lancamento({ profile, userEmail, localData, setLocalData, onNavi
       const { data: { text } } = await worker.recognize(file);
       await worker.terminate();
 
-      // Improved regex based on HTML source
-      const omMatch = text.match(/OM\s*N[º°]?\s*(\d+)/i);
-      const patMatch = text.match(/Patrim[oô]nio[:\s]*([A-Z0-9]+)/i);
+      // Improved regex based on common OCR errors and variations
+      const omMatch = text.match(/(?:OM|0M|QM)\s*N[º°]?\s*[:\s]*(\d+)/i);
+      const patMatch = text.match(/(?:Patrim[oô]nio|Patr|PTR)[:\s]*([A-Z0-9]+)/i);
 
       setFormData(prev => ({
         ...prev,
@@ -131,12 +132,19 @@ export function Lancamento({ profile, userEmail, localData, setLocalData, onNavi
       }));
 
       if (!omMatch && !patMatch) {
-        // Fallback to generic number search if specific labels not found
-        const genericMatches = text.match(/\d{4,}/g);
-        if (genericMatches && genericMatches.length > 0) {
-          setFormData(prev => ({ ...prev, om: genericMatches[0] }));
-        } else {
-          alert('Nenhum dado claro (OM/Patrimônio) encontrado na imagem.');
+        // Fallback: look for any sequence of 4+ digits for OM
+        const genericDigits = text.match(/\d{4,}/g);
+        // Fallback: look for alphanumeric codes for Patrimonio
+        const genericCodes = text.match(/[A-Z]{2,}\d{3,}/g);
+
+        setFormData(prev => ({ 
+          ...prev, 
+          om: genericDigits ? genericDigits[0] : prev.om,
+          patrimonio: genericCodes ? genericCodes[0] : prev.patrimonio
+        }));
+
+        if (!genericDigits && !genericCodes) {
+          alert('⚠️ Não foi possível identificar OM ou Patrimônio automaticamente. Tente uma foto mais nítida ou preencha manualmente.');
         }
       }
     } catch (err) {
@@ -149,23 +157,37 @@ export function Lancamento({ profile, userEmail, localData, setLocalData, onNavi
 
   const handleSave = () => {
     if (!profile?.empresa_id) {
-      return alert('⚠️ Erro de Perfil: Empresa não identificada. Por favor, saia e entre novamente.');
+      console.error('Profile or Empresa ID missing:', profile);
+      return alert('⚠️ Erro de Perfil: Sua conta não está vinculada a uma empresa. Por favor, saia e entre novamente para sincronizar seu perfil.');
     }
-    if (!formData.om) return alert('OM é obrigatória');
+    if (!formData.om) return alert('O número da OM é obrigatório');
     if (!formData.equipamento) return alert('Selecione um equipamento');
-    if (!formData.horas || parseFloat(formData.horas) <= 0) return alert('Horas inválidas');
+    
+    const horasNum = parseFloat(formData.horas);
+    if (isNaN(horasNum) || horasNum <= 0) {
+      return alert('Horas inválidas. Certifique-se de que o serviço foi cronometrado ou insira as horas manualmente.');
+    }
+    
+    const valorNum = parseFloat(formData.valor);
+    if (isNaN(valorNum) || valorNum <= 0) {
+      return alert('Valor inválido. Selecione um equipamento para carregar o valor base.');
+    }
     
     setShowConfirm(true);
   };
 
   const confirmSave = async () => {
     const m = MAQUINAS.find(x => x.nome === formData.equipamento);
-    const valorBase = m?.valor || parseFloat(formData.valor) || 0;
-    const valorFinal = isIdent ? valorBase * 1.5 : valorBase;
+    
+    // Valor final é o que está no input (que já pode ter sido calculado com 1.5x ou editado manualmente)
+    const valorFinal = parseFloat(formData.valor) || 0;
+    
+    // Valor base para histórico (sem o multiplicador de identificação se possível)
+    const valorBase = m?.valor || valorFinal;
 
     const newItem: Servico = {
       empresa_id: profile?.empresa_id || null,
-      tecnico: profile?.id || 'offline',
+      tecnico: profile?.id || '',
       om: formData.om,
       patrimonio: formData.patrimonio || 'S/N',
       equipamento: formData.equipamento,
@@ -173,14 +195,20 @@ export function Lancamento({ profile, userEmail, localData, setLocalData, onNavi
       valor: valorFinal,
       valor_base: valorBase,
       identificacao: isIdent,
-      data_inicio: formData.inicio,
-      data_fim: formData.fim,
+      data_inicio: formData.inicio || null,
+      data_fim: formData.fim || null,
       data: new Date().toLocaleDateString('pt-BR'),
       created_at: new Date().toISOString()
     };
 
+    if (!newItem.tecnico || newItem.tecnico === 'offline') {
+      return alert('⚠️ Erro: Identificação do técnico não encontrada. Por favor, recarregue a página.');
+    }
+
     setSaving(true);
     try {
+      console.log('Tentando salvar serviço:', newItem);
+      
       // Tenta salvar diretamente na nuvem
       const { error } = await supabase.from('servicos').insert({
         empresa_id: newItem.empresa_id,
@@ -191,19 +219,24 @@ export function Lancamento({ profile, userEmail, localData, setLocalData, onNavi
         horas: newItem.horas,
         valor: newItem.valor,
         identificacao: newItem.identificacao,
-        data_inicio: newItem.data_inicio,
-        data_fim: newItem.data_fim,
+        data_inicio: newItem.data_inicio || null,
+        data_fim: newItem.data_fim || null,
         status: 'concluido',
         created_at: newItem.created_at
       });
 
       if (error) throw error;
       
-      alert('✅ Serviço sincronizado com a nuvem!');
-    } catch (err) {
-      console.log('Salvando localmente devido a erro ou falta de conexão');
+      alert('✅ Serviço salvo e sincronizado com sucesso!');
+      
+      // Forçar atualização dos dados na nuvem no componente pai
+      if (onRefresh) {
+        await onRefresh();
+      }
+    } catch (err: any) {
+      console.error('Erro ao salvar na nuvem, tentando local:', err);
       setLocalData([newItem, ...localData]);
-      alert('⚠️ Salvo localmente (sem conexão). Sincronize mais tarde.');
+      alert(`⚠️ Salvo localmente: ${err.message || 'Sem conexão com o servidor'}. O serviço será sincronizado quando houver internet.`);
     } finally {
       setSaving(false);
       setShowConfirm(false);

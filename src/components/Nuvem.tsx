@@ -72,8 +72,15 @@ export function Nuvem({ profile, userEmail, localData, cloudData, setLocalData, 
 
     setSyncing(true);
     try {
+      // Filtrar itens sem técnico antes de enviar
+      const validData = localData.filter(i => i.tecnico && i.tecnico !== 'offline');
+      
+      if (validData.length === 0) {
+        throw new Error('Nenhum dado válido para sincronizar. Verifique se você está logado corretamente.');
+      }
+
       const { error } = await supabase.from('servicos').insert(
-        localData.map(i => ({
+        validData.map(i => ({
           empresa_id: profile.empresa_id,
           tecnico: i.tecnico,
           om: i.om,

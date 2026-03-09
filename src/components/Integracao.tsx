@@ -11,8 +11,8 @@ interface IntegracaoProps {
 export function Integracao({ profile }: IntegracaoProps) {
   const [loading, setLoading] = useState(false);
   const [config, setConfig] = useState({
-    apiUrl: 'https://script.google.com/macros/s/AKfycbyxUVYYT4sOPnwhcS-lEoH-yXTa3YXqYwq1SfNZKVPb1W7d4XnPmCraLDS9NpjMLtTD/exec',
-    apiKey: 'OFICINA-SEGURA-123',
+    apiUrl: '',
+    apiKey: '',
     gsheetId: ''
   });
   const [generatedScript, setGeneratedScript] = useState('');
@@ -31,11 +31,19 @@ export function Integracao({ profile }: IntegracaoProps) {
         .maybeSingle();
 
       if (error) throw error;
+      
+      const defaultUrl = `${window.location.origin}/api/export`;
+      
       if (data) {
         setConfig(prev => ({
           ...prev,
-          apiUrl: data.api_url || '',
+          apiUrl: data.api_url || defaultUrl,
           apiKey: data.api_key || ''
+        }));
+      } else {
+        setConfig(prev => ({
+          ...prev,
+          apiUrl: defaultUrl
         }));
       }
     } catch (err) {
