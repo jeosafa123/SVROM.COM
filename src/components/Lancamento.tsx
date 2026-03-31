@@ -1,117 +1,91 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Play, Square, Camera, Save, AlertTriangle, CheckCircle2, Loader2 } from 'lucide-react';
-import { Servico, UserProfile } from '../types';
-import { MAQUINAS } from '../constants/maquinas';
 import { createWorker } from 'tesseract.js';
-import { cn, formatCurrency, handleError } from '../lib/utils';
-import { motion, AnimatePresence } from 'framer-motion';
-import { supabase } from '../lib/supabase';
+import { Servico } from '../types';
+import { TABELA_PRECOS } from '../constants';
+import { 
+  Play, 
+  Square, 
+  Camera, 
+  Save, 
+  AlertTriangle, 
+  CheckCircle2, 
+  Clock, 
+  DollarSign, 
+  FileText, 
+  Hash 
+} from 'lucide-react';
 
 interface LancamentoProps {
-  profile: UserProfile | null;
-  userEmail: string;
-  localData: Servico[];
-  setLocalData: (data: Servico[]) => void;
-  onNavigateToNuvem: () => void;
-  onRefresh: () => Promise<void>;
+  onSave: (servico: Servico) => void;
+  tecnico: string;
 }
 
-export function Lancamento({ profile, userEmail, localData, setLocalData, onNavigateToNuvem, onRefresh }: LancamentoProps) {
-  const [timerActive, setTimerActive] = useState(false);
-  const [timerSeconds, setTimerSeconds] = useState(0);
-  const [isIdent, setIsIdent] = useState(false);
-  const [ocrLoading, setOcrLoading] = useState(false);
-  const [showConfirm, setShowConfirm] = useState(false);
-  const [saving, setSaving] = useState(false);
+export const Lancamento: React.FC<LancamentoProps> = ({ onSave, tecnico }) => {
+  const [om, setOm] = useState('');
+  const [patrimonio, setPatrimonio] = useState('');
+  const [maquina, setMaquina] = useState(TABELA_PRECOS[0].nome);
+  const [horas, setHoras] = useState(TABELA_PRECOS[0].horas.toString());
+  const [valor, setValor] = useState(TABELA_PRECOS[0].valor.toString());
+  const [dataAbertura, setDataAbertura] = useState(new Date().toISOString().split('T')[0]);
+  const [dataEntrega, setDataEntrega] = useState(new Date().toISOString().split('T')[0]);
+  const [status, setStatus] = useState<'Aberto' | 'Liberado' | 'Indenizado'>('Aberto');
+  const [indenizacao, setIndenizacao] = useState(false);
+  const [isIdentifying, setIsIdentifying] = useState(false);
   
-  const [formData, setFormData] = useState({
-    om: '',
-    patrimonio: '',
-    equipamento: '',
-    horas: '',
-    valor: '',
-    inicio: '',
-    fim: ''
-  });
-
+  // Timer state
+  const [timerActive, setTimerActive] = useState(false);
+  const [seconds, setSeconds] = useState(0);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
+  // OCR state
+  const [ocrLoading, setOcrLoading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   useEffect(() => {
-    const savedStart = localStorage.getItem('t_start');
-    if (savedStart) {
-      setTimerActive(true);
-      const start = new Date(savedStart).getTime();
-      const now = new Date().getTime();
-      setTimerSeconds(Math.floor((now - start) / 1000));
-      
+    if (timerActive) {
       timerRef.current = setInterval(() => {
-        setTimerSeconds(prev => prev + 1);
+        setSeconds(s => s + 1);
       }, 1000);
+    } else {
+      if (timerRef.current) clearInterval(timerRef.current);
     }
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, []);
+  }, [timerActive]);
 
-  const formatTimer = (totalSeconds: number) => {
+  const formatTime = (totalSeconds: number) => {
     const h = Math.floor(totalSeconds / 3600);
     const m = Math.floor((totalSeconds % 3600) / 60);
     const s = totalSeconds % 60;
     return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
-  const handleTimerToggle = () => {
-    if (!timerActive) {
-      const now = new Date();
-      localStorage.setItem('t_start', now.toISOString());
-      setTimerActive(true);
-      setTimerSeconds(0);
-      
-      const off = now.getTimezoneOffset() * 60000;
-      setFormData(prev => ({
-        ...prev,
-        inicio: new Date(now.getTime() - off).toISOString().slice(0, 16)
-      }));
-
-      timerRef.current = setInterval(() => {
-        setTimerSeconds(prev => prev + 1);
-      }, 1000);
-    } else {
-      if (timerRef.current) clearInterval(timerRef.current);
-      setTimerActive(false);
-      
-      const start = new Date(localStorage.getItem('t_start')!);
-      const now = new Date();
-      const hrs = (now.getTime() - start.getTime()) / 3600000;
-      
-      const off = now.getTimezoneOffset() * 60000;
-      setFormData(prev => ({
-        ...prev,
-        horas: Math.max(0, hrs).toFixed(2),
-        fim: new Date(now.getTime() - off).toISOString().slice(0, 16)
-      }));
-      
-      localStorage.removeItem('t_start');
-      autoFill(formData.equipamento, Math.max(0, hrs));
+  const handleMaquinaChange = (nome: string) => {
+    const selected = TABELA_PRECOS.find(m => m.nome === nome);
+    if (selected) {
+      setMaquina(nome);
+      setHoras(selected.horas.toString());
+      setValor(selected.valor.toString());
+      setIsIdentifying(false);
     }
   };
 
-  const autoFill = (equipNome: string, currentHoras?: number) => {
-    const m = MAQUINAS.find(x => x.nome === equipNome);
-    if (m) {
-      let v = m.valor;
-      if (isIdent) v = v * 1.5;
-      
-      setFormData(prev => ({
-        ...prev,
-        equipamento: equipNome,
-        horas: prev.horas || m.horas.toString(),
-        valor: v.toFixed(2)
-      }));
+  const toggleIdentificacao = () => {
+    const selected = TABELA_PRECOS.find(m => m.nome === maquina);
+    if (selected) {
+      if (!isIdentifying) {
+        setValor((selected.valor * 1.5).toFixed(2));
+        setHoras((selected.horas * 1.5).toFixed(2));
+      } else {
+        setValor(selected.valor.toString());
+        setHoras(selected.horas.toString());
+      }
+      setIsIdentifying(!isIdentifying);
     }
   };
 
-  const handleOcr = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleOCR = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -121,369 +95,246 @@ export function Lancamento({ profile, userEmail, localData, setLocalData, onNavi
       const { data: { text } } = await worker.recognize(file);
       await worker.terminate();
 
-      // Improved regex based on common OCR errors and variations
-      const omMatch = text.match(/(?:OM|0M|QM)\s*N[º°]?\s*[:\s]*(\d+)/i);
-      const patMatch = text.match(/(?:Patrim[oô]nio|Patr|PTR)[:\s]*([A-Z0-9]+)/i);
-
-      setFormData(prev => ({
-        ...prev,
-        om: omMatch ? omMatch[1] : (prev.om || ''),
-        patrimonio: patMatch ? patMatch[1] : (prev.patrimonio || '')
-      }));
-
-      if (!omMatch && !patMatch) {
-        // Fallback: look for any sequence of 4+ digits for OM
-        const genericDigits = text.match(/\d{4,}/g);
-        // Fallback: look for alphanumeric codes for Patrimonio
-        const genericCodes = text.match(/[A-Z]{2,}\d{3,}/g);
-
-        setFormData(prev => ({ 
-          ...prev, 
-          om: genericDigits ? genericDigits[0] : prev.om,
-          patrimonio: genericCodes ? genericCodes[0] : prev.patrimonio
-        }));
-
-        if (!genericDigits && !genericCodes) {
-          alert('⚠️ Não foi possível identificar OM ou Patrimônio automaticamente. Tente uma foto mais nítida ou preencha manualmente.');
-        }
+      // Simple regex to find OM numbers (usually digits)
+      const match = text.match(/\d{4,8}/);
+      if (match) {
+        setOm(match[0]);
+      } else {
+        alert('Não foi possível identificar o número da OM na imagem.');
       }
     } catch (err) {
-      handleError(err, 'Processamento OCR');
+      console.error('OCR Error:', err);
+      alert('Erro ao processar imagem.');
     } finally {
       setOcrLoading(false);
-      e.target.value = '';
     }
   };
 
-  const handleSave = () => {
-    if (!profile?.empresa_id) {
-      console.error('Profile or Empresa ID missing:', profile);
-      return alert('⚠️ Erro de Perfil: Sua conta não está vinculada a uma empresa. Por favor, saia e entre novamente para sincronizar seu perfil.');
-    }
-    if (!formData.om) return alert('O número da OM é obrigatório');
-    if (!formData.equipamento) return alert('Selecione um equipamento');
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
     
-    const horasNum = parseFloat(formData.horas);
-    if (isNaN(horasNum) || horasNum <= 0) {
-      return alert('Horas inválidas. Certifique-se de que o serviço foi cronometrado ou insira as horas manualmente.');
-    }
-    
-    const valorNum = parseFloat(formData.valor);
-    if (isNaN(valorNum) || valorNum <= 0) {
-      return alert('Valor inválido. Selecione um equipamento para carregar o valor base.');
-    }
-    
-    setShowConfirm(true);
-  };
-
-  const confirmSave = async () => {
-    const m = MAQUINAS.find(x => x.nome === formData.equipamento);
-    
-    // Valor final é o que está no input (que já pode ter sido calculado com 1.5x ou editado manualmente)
-    const valorFinal = parseFloat(formData.valor) || 0;
-    
-    // Valor base para histórico (sem o multiplicador de identificação se possível)
-    const valorBase = m?.valor || valorFinal;
-
-    const newItem: Servico = {
-      empresa_id: profile?.empresa_id || null,
-      tecnico: profile?.id || '',
-      om: formData.om,
-      patrimonio: formData.patrimonio || 'S/N',
-      equipamento: formData.equipamento,
-      horas: parseFloat(formData.horas),
-      valor: valorFinal,
-      valor_base: valorBase,
-      identificacao: isIdent,
-      data_inicio: formData.inicio || null,
-      data_fim: formData.fim || null,
-      data: new Date().toLocaleDateString('pt-BR'),
-      created_at: new Date().toISOString()
-    };
-
-    if (!newItem.tecnico || newItem.tecnico === 'offline') {
-      return alert('⚠️ Erro: Identificação do técnico não encontrada. Por favor, recarregue a página.');
+    if (!om || !patrimonio) {
+      alert('Preencha OM e Patrimônio!');
+      return;
     }
 
-    setSaving(true);
-    try {
-      console.log('Tentando salvar serviço:', newItem);
+    if (confirm(`Deseja salvar o serviço OM ${om}?`)) {
+      const novoServico: Servico = {
+        id: Date.now().toString(),
+        om,
+        patrimonio,
+        maquina,
+        horas,
+        valor,
+        dataAbertura,
+        dataEntrega,
+        status,
+        indenizacao,
+        tecnico,
+        sincronizado: false,
+        createdAt: new Date().toISOString()
+      };
+      onSave(novoServico);
       
-      // Tenta salvar diretamente na nuvem
-      const { error } = await supabase.from('servicos').insert({
-        empresa_id: newItem.empresa_id,
-        tecnico: newItem.tecnico,
-        om: newItem.om,
-        patrimonio: newItem.patrimonio,
-        equipamento: newItem.equipamento,
-        horas: newItem.horas,
-        valor: newItem.valor,
-        identificacao: newItem.identificacao,
-        data_inicio: newItem.data_inicio || null,
-        data_fim: newItem.data_fim || null,
-        status: 'concluido',
-        created_at: newItem.created_at
-      });
-
-      if (error) throw error;
-      
-      alert('✅ Serviço salvo e sincronizado com sucesso!');
-      
-      // Forçar atualização dos dados na nuvem no componente pai
-      if (onRefresh) {
-        await onRefresh();
-      }
-    } catch (err: any) {
-      console.error('Erro ao salvar na nuvem, tentando local:', err);
-      setLocalData([newItem, ...localData]);
-      alert(`⚠️ Salvo localmente: ${err.message || 'Sem conexão com o servidor'}. O serviço será sincronizado quando houver internet.`);
-    } finally {
-      setSaving(false);
-      setShowConfirm(false);
-      setFormData({
-        om: '',
-        patrimonio: '',
-        equipamento: '',
-        horas: '',
-        valor: '',
-        inicio: '',
-        fim: ''
-      });
-      setIsIdent(false);
+      // Reset form
+      setOm('');
+      setPatrimonio('');
+      setSeconds(0);
+      setTimerActive(false);
+      setIsIdentifying(false);
     }
   };
 
-  const handleIdentToggle = () => {
-    const nextIdent = !isIdent;
-    setIsIdent(nextIdent);
-    
-    // Recalcular valor se houver equipamento selecionado
-    const m = MAQUINAS.find(x => x.nome === formData.equipamento);
-    if (m) {
-      let v = m.valor;
-      if (nextIdent) v = v * 1.5;
-      setFormData(prev => ({ ...prev, valor: v.toFixed(2) }));
-    }
+  const stopTimerAndFill = () => {
+    setTimerActive(false);
+    const h = (seconds / 3600).toFixed(2);
+    setHoras(h);
   };
 
   return (
-    <div className="space-y-6">
-      {localData.length > 0 && (
-        <motion.div 
-          initial={{ opacity: 0, x: -20 }}
-          animate={{ opacity: 1, x: 0 }}
-          className="bg-[var(--bg-card)] border border-[var(--warning)] p-4 rounded-xl flex items-center justify-between shadow-lg"
-        >
-          <div className="flex items-center gap-3 text-[var(--warning)]">
-            <AlertTriangle size={20} />
-            <span className="font-bold text-sm">
-              Você tem <strong>{localData.length}</strong> itens pendentes para sincronizar.
-            </span>
-          </div>
-          <button 
-            onClick={onNavigateToNuvem}
-            className="bg-[var(--warning)] text-black px-4 py-2 rounded-lg font-black text-xs uppercase tracking-wider hover:brightness-110"
-          >
-            SINCRONIZAR
-          </button>
-        </motion.div>
-      )}
+    <div className="p-4 space-y-4 pb-24">
+      <h1 className="brand-name">LANÇAMENTO</h1>
 
-      <div className="bg-[var(--bg-card)] border border-[var(--success)] p-6 rounded-2xl shadow-xl text-center">
-        {!timerActive ? (
-          <button 
-            onClick={handleTimerToggle}
-            className="w-full bg-[var(--success)] text-white font-black py-4 rounded-xl uppercase tracking-widest flex items-center justify-center gap-3 hover:brightness-110 active:scale-95 transition-all"
-          >
-            <Play size={24} fill="currentColor" />
-            INICIAR SERVIÇO
-          </button>
-        ) : (
-          <div className="space-y-4">
-            <div className="text-5xl font-black text-[var(--success)] font-mono tracking-tighter drop-shadow-[0_0_15px_rgba(34,197,94,0.4)]">
-              {formatTimer(timerSeconds)}
-            </div>
+      {/* Timer Card */}
+      <div className="card-hardware p-4 flex flex-col items-center gap-4">
+        <div className="flex items-center gap-2 text-muted uppercase font-black text-[0.7rem]">
+          <Clock size={14} /> Cronômetro de Serviço
+        </div>
+        <div className="timer-display text-4xl font-black text-primary">
+          {formatTime(seconds)}
+        </div>
+        <div className="flex gap-3 w-full">
+          {!timerActive ? (
             <button 
-              onClick={handleTimerToggle}
-              className="w-full bg-[var(--danger)] text-white font-black py-4 rounded-xl uppercase tracking-widest flex items-center justify-center gap-3 hover:brightness-110 active:scale-95 transition-all"
+              onClick={() => setTimerActive(true)}
+              className="btn-primary flex-1 bg-green-500 text-white"
             >
-              <Square size={24} fill="currentColor" />
-              FINALIZAR
+              <Play size={16} /> Iniciar
             </button>
-          </div>
-        )}
+          ) : (
+            <button 
+              onClick={stopTimerAndFill}
+              className="btn-primary flex-1 bg-red-500 text-white"
+            >
+              <Square size={16} /> Parar e Preencher
+            </button>
+          )}
+        </div>
       </div>
 
-      <div className="card-hardware p-6 space-y-6">
-        <div className="grid grid-cols-2 gap-4">
-          <div className="space-y-1.5">
-            <label className="text-[var(--text-muted)] text-[10px] font-black uppercase tracking-widest">Início</label>
-            <input 
-              type="datetime-local" 
-              value={formData.inicio}
-              onChange={e => setFormData({ ...formData, inicio: e.target.value })}
-              className="input-hardware text-sm"
-            />
+      {/* Form Card */}
+      <form onSubmit={handleSubmit} className="card-hardware p-4 space-y-4">
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1">
+            <label className="text-[0.65rem] font-black uppercase text-muted flex items-center gap-1">
+              <Hash size={10} /> OM
+            </label>
+            <div className="relative">
+              <input 
+                type="text" 
+                value={om} 
+                onChange={e => setOm(e.target.value)}
+                className="input-hardware input-om-highlight" 
+                placeholder="0000"
+              />
+              <button 
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-primary"
+              >
+                <Camera size={18} />
+              </button>
+              <input 
+                type="file" 
+                ref={fileInputRef} 
+                onChange={handleOCR} 
+                className="hidden" 
+                accept="image/*"
+              />
+            </div>
           </div>
-          <div className="space-y-1.5">
-            <label className="text-[var(--text-muted)] text-[10px] font-black uppercase tracking-widest">Fim</label>
+          <div className="space-y-1">
+            <label className="text-[0.65rem] font-black uppercase text-muted flex items-center gap-1">
+              <FileText size={10} /> Patrimônio
+            </label>
             <input 
-              type="datetime-local" 
-              value={formData.fim}
-              onChange={e => setFormData({ ...formData, fim: e.target.value })}
-              className="input-hardware text-sm"
+              type="text" 
+              value={patrimonio} 
+              onChange={e => setPatrimonio(e.target.value)}
+              className="input-hardware" 
+              placeholder="P000"
             />
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
-          <div className="space-y-1.5">
-            <label className="text-[var(--text-muted)] text-[10px] font-black uppercase tracking-widest">OM</label>
-            <input 
-              type="text" 
-              placeholder="Nº da OM"
-              value={formData.om}
-              onChange={e => setFormData({ ...formData, om: e.target.value })}
-              className="input-hardware font-mono"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-[var(--text-muted)] text-[10px] font-black uppercase tracking-widest">Patrimônio</label>
-            <input 
-              type="text" 
-              placeholder="Nº patrimônio"
-              value={formData.patrimonio}
-              onChange={e => setFormData({ ...formData, patrimonio: e.target.value })}
-              className="input-hardware font-mono"
-            />
-          </div>
-        </div>
-
-        <div className="space-y-1.5">
-          <label className="text-[var(--text-muted)] text-[10px] font-black uppercase tracking-widest">Equipamento</label>
+        <div className="space-y-1">
+          <label className="text-[0.65rem] font-black uppercase text-muted">Máquina / Equipamento</label>
           <select 
-            value={formData.equipamento}
-            onChange={e => autoFill(e.target.value)}
+            value={maquina} 
+            onChange={e => handleMaquinaChange(e.target.value)}
             className="input-hardware"
           >
-            <option value="">Selecione o equipamento...</option>
-            {MAQUINAS.map(m => (
+            {TABELA_PRECOS.map(m => (
               <option key={m.nome} value={m.nome}>{m.nome}</option>
             ))}
           </select>
         </div>
 
-        <button 
-          onClick={handleIdentToggle}
-          className={cn(
-            "w-full py-4 rounded-xl font-black uppercase tracking-widest text-sm transition-all border-2",
-            isIdent 
-              ? "bg-[var(--primary)] text-black border-[var(--primary)] shadow-[0_0_20px_rgba(255,204,0,0.3)]" 
-              : "bg-transparent text-[var(--primary)] border-[var(--primary)] hover:bg-[var(--primary)]/5"
-          )}
-        >
-          {isIdent ? '✅ IDENTIFICAÇÃO ATIVA (+50%)' : '🔍 IDENTIFICAÇÃO (OFF)'}
-        </button>
-
-        <div className="grid grid-cols-2 gap-4">
-          <div className="space-y-1.5">
-            <label className="text-[var(--text-muted)] text-[10px] font-black uppercase tracking-widest">Horas</label>
-            <input 
-              type="number" 
-              step="0.1"
-              value={formData.horas}
-              onChange={e => setFormData({ ...formData, horas: e.target.value })}
-              className="input-hardware font-mono"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-[var(--text-muted)] text-[10px] font-black uppercase tracking-widest">Valor R$</label>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1">
+            <label className="text-[0.65rem] font-black uppercase text-muted">Horas</label>
             <input 
               type="number" 
               step="0.01"
-              value={formData.valor}
-              onChange={e => setFormData({ ...formData, valor: e.target.value })}
-              className="input-hardware font-mono text-[var(--primary)] font-bold"
+              value={horas} 
+              onChange={e => setHoras(e.target.value)}
+              className="input-hardware" 
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-[0.65rem] font-black uppercase text-muted">Valor (R$)</label>
+            <input 
+              type="number" 
+              step="0.01"
+              value={valor} 
+              onChange={e => setValor(e.target.value)}
+              className="input-hardware" 
             />
           </div>
         </div>
 
-        <div className="flex gap-4 pt-4">
-          <label className="flex-1 btn-hardware-outline cursor-pointer">
-            <Camera size={20} />
-            <span>{ocrLoading ? '...' : 'OCR'}</span>
-            <input type="file" hidden accept="image/*" capture="environment" onChange={handleOcr} disabled={ocrLoading} />
+        <div className="flex items-center gap-2 p-2 bg-primary/5 border border-primary/20 rounded-lg">
+          <input 
+            type="checkbox" 
+            id="identificacao" 
+            checked={isIdentifying}
+            onChange={toggleIdentificacao}
+            className="w-4 h-4 accent-primary"
+          />
+          <label htmlFor="identificacao" className="text-[0.7rem] font-black uppercase text-primary">
+            Adicionar Identificação (+50%)
           </label>
-          <button 
-            onClick={handleSave}
-            className="flex-[2] btn-hardware-primary"
-          >
-            <Save size={20} />
-            SALVAR SERVIÇO
-          </button>
         </div>
-      </div>
 
-      {/* Confirmation Modal */}
-      <AnimatePresence>
-        {showConfirm && (
-          <div className="fixed inset-0 z-[2000] flex items-center justify-center p-6">
-            <motion.div 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setShowConfirm(false)}
-              className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1">
+            <label className="text-[0.65rem] font-black uppercase text-muted">Abertura</label>
+            <input 
+              type="date" 
+              value={dataAbertura} 
+              onChange={e => setDataAbertura(e.target.value)}
+              className="input-hardware" 
             />
-            <motion.div 
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              className="relative bg-[var(--bg-card)] border border-[var(--primary)] p-8 rounded-2xl w-full max-w-md shadow-2xl space-y-6"
-            >
-              <h3 className="text-[var(--primary)] text-xl font-black text-center tracking-widest uppercase">📋 CONFIRMAR SERVIÇO</h3>
-              
-              <div className="space-y-3">
-                <ConfirmRow label="OM" value={formData.om} />
-                <ConfirmRow label="Patrimônio" value={formData.patrimonio || 'S/N'} />
-                <ConfirmRow label="Equipamento" value={formData.equipamento} />
-                <ConfirmRow label="Horas" value={`${formData.horas}h`} />
-                <ConfirmRow label="Valor Base" value={formatCurrency(MAQUINAS.find(x => x.nome === formData.equipamento)?.valor || 0)} />
-                <ConfirmRow label="Identificação" value={isIdent ? 'SIM (+50%)' : 'NÃO'} />
-                <div className="flex justify-between items-center pt-4 border-t-2 border-[var(--primary)]">
-                  <span className="text-[var(--text-muted)] font-bold text-sm">VALOR FINAL</span>
-                  <span className="text-[var(--success)] text-2xl font-black">{formatCurrency(parseFloat(formData.valor))}</span>
-                </div>
-              </div>
-
-              <div className="flex gap-4 pt-4">
-                <button 
-                  onClick={() => setShowConfirm(false)}
-                  className="flex-1 border border-[var(--danger)] text-[var(--danger)] font-black py-3 rounded-xl uppercase tracking-widest text-xs hover:bg-[var(--danger)] hover:text-white transition-all"
-                >
-                  CORRIGIR
-                </button>
-                <button 
-                  onClick={confirmSave}
-                  disabled={saving}
-                  className="flex-1 bg-[var(--success)] text-white font-black py-3 rounded-xl uppercase tracking-widest text-xs hover:brightness-110 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
-                >
-                  {saving ? <Loader2 className="animate-spin" size={16} /> : 'CONFIRMAR'}
-                </button>
-              </div>
-            </motion.div>
           </div>
-        )}
-      </AnimatePresence>
-    </div>
-  );
-}
+          <div className="space-y-1">
+            <label className="text-[0.65rem] font-black uppercase text-muted">Entrega</label>
+            <input 
+              type="date" 
+              value={dataEntrega} 
+              onChange={e => setDataEntrega(e.target.value)}
+              className="input-hardware" 
+            />
+          </div>
+        </div>
 
-function ConfirmRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex justify-between items-center border-b border-[var(--border)] py-2">
-      <span className="text-[var(--text-muted)] text-xs font-bold uppercase tracking-wider">{label}</span>
-      <span className="text-[var(--text-main)] font-black text-sm">{value}</span>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1">
+            <label className="text-[0.65rem] font-black uppercase text-muted">Status</label>
+            <select 
+              value={status} 
+              onChange={e => setStatus(e.target.value as any)}
+              className="input-hardware"
+            >
+              <option value="Aberto">Aberto</option>
+              <option value="Liberado">Liberado</option>
+              <option value="Indenizado">Indenizado</option>
+            </select>
+          </div>
+          <div className="flex items-center gap-2 mt-5">
+            <input 
+              type="checkbox" 
+              id="indenizacao" 
+              checked={indenizacao}
+              onChange={e => setIndenizacao(e.target.checked)}
+              className="w-4 h-4 accent-danger"
+            />
+            <label htmlFor="indenizacao" className="text-[0.7rem] font-black uppercase text-danger">
+              Indenização
+            </label>
+          </div>
+        </div>
+
+        <button type="submit" className="btn-primary w-full mt-4">
+          <Save size={18} /> Salvar Serviço
+        </button>
+      </form>
+
+      {ocrLoading && (
+        <div className="fixed inset-0 bg-black/80 z-[200] flex flex-col items-center justify-center gap-4">
+          <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+          <p className="text-primary font-black uppercase tracking-widest">Processando OCR...</p>
+        </div>
+      )}
     </div>
   );
-}
+};

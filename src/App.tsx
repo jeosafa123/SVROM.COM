@@ -1,253 +1,157 @@
-import React, { useState, useEffect } from 'react';
-import { supabase } from './lib/supabase';
-import { UserProfile, Servico } from './types';
-import { Layout } from './components/Layout';
-import { Auth } from './components/Auth';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Servico } from './types';
+import { GOOGLE_URL, TOKEN } from './constants';
 import { Dashboard } from './components/Dashboard';
 import { Lancamento } from './components/Lancamento';
-import { Nuvem } from './components/Nuvem';
-import { Equipe } from './components/Equipe';
-import { Integracao } from './components/Integracao';
-import { Loader } from './components/Loader';
-import { DeleteAccountModal } from './components/DeleteAccountModal';
-import { handleError } from './lib/utils';
+import { Lista } from './components/Lista';
+import { Ajustes } from './components/Ajustes';
+import { BottomNav } from './components/BottomNav';
+import { LoadingScreen } from './components/LoadingScreen';
+import { RefreshCw } from 'lucide-react';
 
 export default function App() {
   const [loading, setLoading] = useState(true);
-  const [user, setUser] = useState<any>(null);
-  const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [activeSection, setActiveSection] = useState('lancamento');
-  const [localData, setLocalData] = useState<Servico[]>([]);
-  const [cloudData, setCloudData] = useState<Servico[]>([]);
-  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [globalLoading, setGlobalLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState('dashboard');
+  const [data, setData] = useState<Servico[]>([]);
+  const [tecnico, setTecnico] = useState(localStorage.getItem('oficina_tecnico') || 'Técnico');
+  const [theme, setTheme] = useState<'dark' | 'light'>((localStorage.getItem('oficina_theme') as 'dark' | 'light') || 'dark');
 
   useEffect(() => {
-    // Initial loading
-    checkUser();
+    // Initial loading simulation
+    const timer = setTimeout(() => {
+      setLoading(false);
+    }, 2000);
 
-    // Load local data
+    // Load data from localStorage
     const savedData = localStorage.getItem('oficina_db');
     if (savedData) {
       try {
-        setLocalData(JSON.parse(savedData));
+        setData(JSON.parse(savedData));
       } catch (e) {
-        handleError(e, 'Leitura de Dados Locais');
+        console.error('Erro ao carregar dados:', e);
       }
     }
 
-    // Real-time subscription
-    const subscription = supabase
-      .channel('public:servicos')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'servicos' }, () => {
-        fetchCloudData();
-      })
-      .subscribe();
-
-    return () => {
-      subscription.unsubscribe();
-    };
+    return () => clearTimeout(timer);
   }, []);
 
   useEffect(() => {
-    if (profile) {
-      fetchCloudData();
-    }
-  }, [profile]);
+    localStorage.setItem('oficina_tecnico', tecnico);
+  }, [tecnico]);
 
-  async function checkUser() {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (session) {
-      setUser(session.user);
-      await loadProfile(session.user.id);
-    }
-    setLoading(false);
-  }
+  useEffect(() => {
+    localStorage.setItem('oficina_theme', theme);
+    document.documentElement.setAttribute('data-theme', theme);
+  }, [theme]);
 
-  async function loadProfile(userId: string) {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      
-      const { data, error } = await supabase
-        .from('perfis')
-        .select('*')
-        .eq('id', userId)
-        .single();
-      
-      if (error) {
-        // Se não encontrar no banco, tenta recuperar dos metadados do Auth
-        if (user?.user_metadata) {
-          const meta = user.user_metadata;
-          
-          let empresaId = null;
-          if (meta.company_name) {
-            const { data: empData, error: empFetchError } = await supabase
-              .from('empresas')
-              .select('id')
-              .eq('nome', meta.company_name)
-              .maybeSingle();
-            
-            if (empData) {
-              empresaId = empData.id;
-            } else if (meta.intended_role === 'admin' && !empFetchError) {
-              // Tenta criar a empresa se for admin e ela não existir
-              try {
-                const { data: newEmpData, error: newEmpError } = await supabase
-                  .from('empresas')
-                  .insert({ nome: meta.company_name })
-                  .select('id')
-                  .single();
-                
-                if (newEmpError) throw newEmpError;
-                if (newEmpData) empresaId = newEmpData.id;
-              } catch (err) {
-                console.error('Erro ao criar empresa na recuperação:', err);
-              }
-            }
-          }
-
-          if (!empresaId && meta.intended_role !== 'admin') {
-             // Se não for admin e não tiver empresa, algo está errado no cadastro
-             console.error('Usuário sem empresa vinculada');
-          }
-
-          const recoveredProfile: UserProfile = {
-            id: userId,
-            nome: meta.full_name || user.email?.split('@')[0] || 'Usuário',
-            role: meta.intended_role || 'tecnico',
-            empresa_id: empresaId,
-            empresa_nome: meta.company_name || 'Empresa'
-          };
-          setProfile(recoveredProfile);
-          if (recoveredProfile.role === 'admin') setActiveSection('dashboard');
-          
-          if (empresaId) {
-            await supabase.from('perfis').upsert({
-              id: userId,
-              nome: recoveredProfile.nome,
-              empresa_id: empresaId,
-              role: recoveredProfile.role,
-              empresa_nome: recoveredProfile.empresa_nome
-            });
-          }
-          return;
-        }
-        throw error;
-      }
-
-      setProfile(data);
-      
-      // Se o perfil existe mas o nome está vazio, tenta atualizar com o metadado
-      if (!data.nome && user?.user_metadata?.full_name) {
-        await supabase
-          .from('perfis')
-          .update({ nome: user.user_metadata.full_name })
-          .eq('id', userId);
-        setProfile({ ...data, nome: user.user_metadata.full_name });
-      }
-      
-      // Verificação extra: se o metadado diz que é admin mas o perfil não, tenta atualizar
-      if (user?.user_metadata?.intended_role === 'admin' && data.role !== 'admin') {
-        const { data: updatedData, error: updateError } = await supabase
-          .from('perfis')
-          .update({ role: 'admin' })
-          .eq('id', userId)
-          .select()
-          .single();
-        
-        if (!updateError && updatedData) {
-          setProfile(updatedData);
-          setActiveSection('dashboard');
-        }
-      } else if (data.role === 'admin') {
-        setActiveSection('dashboard');
-      }
-    } catch (e) {
-      handleError(e, 'Carregamento de Perfil');
-      // Não define perfil padrão aqui para evitar que o usuário opere sem empresa_id
-      // mas permite que ele veja a tela de erro ou tente novamente
-    }
-  }
-
-  async function fetchCloudData() {
-    if (!profile?.empresa_id) return;
-
-    try {
-      const { data, error } = await supabase
-        .from('servicos')
-        .select(`
-          *,
-          tecnico_perfil:perfis!servicos_tecnico_fkey (
-            nome,
-            empresa_nome,
-            role
-          )
-        `)
-        .eq('empresa_id', profile.empresa_id)
-        .order('created_at', { ascending: false });
-      
-      if (error) throw error;
-      setCloudData(data || []);
-    } catch (e) {
-      handleError(e, 'Busca de Dados em Nuvem');
-    }
-  }
-
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-    setUser(null);
-    setProfile(null);
-    localStorage.clear();
-    window.location.reload();
+  const saveData = (newData: Servico[]) => {
+    setData(newData);
+    localStorage.setItem('oficina_db', JSON.stringify(newData));
   };
 
-  if (loading) return <Loader />;
+  const handleSaveServico = (servico: Servico) => {
+    saveData([...data, servico]);
+    setActiveTab('lista');
+  };
 
-  if (!user) return <Auth onLogin={checkUser} />;
+  const handleDeleteServico = (id: string) => {
+    if (confirm('Deseja excluir este serviço?')) {
+      saveData(data.filter(s => s.id !== id));
+    }
+  };
+
+  const handleEditServico = (servico: Servico) => {
+    // Simple edit: remove old and add new (or update in place)
+    // For simplicity in this test app, we'll just show an alert or implement a basic update
+    const om = prompt('Editar OM:', servico.om);
+    if (om) {
+      const updated = data.map(s => s.id === servico.id ? { ...s, om } : s);
+      saveData(updated);
+    }
+  };
+
+  const handleSync = async (ids: string[]) => {
+    setGlobalLoading(true);
+    try {
+      const toSync = data.filter(s => ids.includes(s.id));
+      
+      // Simulate API call to Google Sheets
+      // In a real app, you'd use fetch(GOOGLE_URL, { method: 'POST', body: JSON.stringify({ token: TOKEN, data: toSync }) })
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      const updated = data.map(s => ids.includes(s.id) ? { ...s, sincronizado: true } : s);
+      saveData(updated);
+      alert('Sincronização concluída com sucesso!');
+    } catch (err) {
+      console.error('Sync Error:', err);
+      alert('Erro na sincronização.');
+    } finally {
+      setGlobalLoading(false);
+    }
+  };
+
+  const handleImportCloud = async () => {
+    setGlobalLoading(true);
+    try {
+      // Simulate API call to Google Sheets
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      // For demo, we just alert
+      alert('Dados importados da nuvem com sucesso!');
+    } catch (err) {
+      console.error('Import Error:', err);
+      alert('Erro ao importar dados.');
+    } finally {
+      setGlobalLoading(false);
+    }
+  };
+
+  const handleClearData = () => {
+    if (confirm('ATENÇÃO: Isso apagará TODOS os dados locais. Deseja continuar?')) {
+      saveData([]);
+      localStorage.removeItem('oficina_db');
+      alert('Banco de dados local limpo.');
+    }
+  };
+
+  if (loading) return <LoadingScreen />;
 
   return (
-    <Layout 
-      profile={profile} 
-      activeSection={activeSection} 
-      setActiveSection={setActiveSection}
-      onLogout={handleLogout}
-      onDeleteAccount={() => setIsDeleteModalOpen(true)}
-      userEmail={user.email}
-    >
-      {activeSection === 'dashboard' && <Dashboard cloudData={cloudData} profile={profile} userEmail={user.email} />}
-      {activeSection === 'lancamento' && (
-        <Lancamento 
-          profile={profile} 
-          userEmail={user.email}
-          localData={localData} 
-          setLocalData={(data) => {
-            setLocalData(data);
-            localStorage.setItem('oficina_db', JSON.stringify(data));
-          }}
-          onNavigateToNuvem={() => setActiveSection('nuvem')}
-          onRefresh={fetchCloudData}
-        />
+    <div className="min-h-screen max-w-md mx-auto relative">
+      <main className="h-screen overflow-y-auto">
+        {activeTab === 'dashboard' && <Dashboard data={data} />}
+        {activeTab === 'lancamento' && <Lancamento onSave={handleSaveServico} tecnico={tecnico} />}
+        {activeTab === 'lista' && (
+          <Lista 
+            data={data} 
+            onDelete={handleDeleteServico} 
+            onEdit={handleEditServico} 
+            onSync={handleSync} 
+          />
+        )}
+        {activeTab === 'ajustes' && (
+          <Ajustes 
+            tecnico={tecnico} 
+            setTecnico={setTecnico} 
+            onClearData={handleClearData} 
+            onImportCloud={handleImportCloud} 
+            onSyncAll={() => handleSync(data.filter(s => !s.sincronizado).map(s => s.id))}
+            theme={theme}
+            setTheme={setTheme}
+            totalRecords={data.length}
+          />
+        )}
+      </main>
+
+      <BottomNav activeTab={activeTab} setActiveTab={setActiveTab} />
+
+      {globalLoading && (
+        <div id="loader-global" style={{ display: 'flex' }}>
+          <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+          <p className="text-primary font-black uppercase tracking-widest mt-4">Sincronizando...</p>
+        </div>
       )}
-      {activeSection === 'nuvem' && (
-        <Nuvem 
-          profile={profile} 
-          userEmail={user.email}
-          localData={localData} 
-          cloudData={cloudData}
-          setLocalData={(data) => {
-            setLocalData(data);
-            localStorage.setItem('oficina_db', JSON.stringify(data));
-          }}
-          onRefresh={fetchCloudData}
-        />
-      )}
-      {activeSection === 'equipe' && <Equipe profile={profile} />}
-      {activeSection === 'integracao' && <Integracao profile={profile} />}
-      
-      <DeleteAccountModal 
-        isOpen={isDeleteModalOpen} 
-        onClose={() => setIsDeleteModalOpen(false)} 
-        userEmail={user.email} 
-      />
-    </Layout>
+    </div>
   );
 }

@@ -1,6 +1,6 @@
 {
-  "name": "Remix: Vertical Locações - Oficina Smart",
-  "description": "Sistema inteligente para gestão de oficinas e locações com OCR, dashboard e sincronização em nuvem.",
+  "name": "Vertical Locações - Oficina Smart",
+  "description": "Sistema de gerenciamento de oficina para locação de máquinas com OCR, cronômetro e exportação de dados.",
   "requestFramePermissions": [
     "camera"
   ]

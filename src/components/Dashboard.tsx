@@ -1,163 +1,155 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
+import { Bar } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
   CategoryScale,
   LinearScale,
-  PointElement,
-  LineElement,
+  BarElement,
   Title,
   Tooltip,
   Legend,
-  Filler
 } from 'chart.js';
-import { Line } from 'react-chartjs-2';
-import { Servico, UserProfile } from '../types';
-import { formatCurrency, formatDate } from '../lib/utils';
+import { Servico } from '../types';
+import { TrendingUp, Clock, AlertCircle, CheckCircle2, FileText } from 'lucide-react';
 
 ChartJS.register(
   CategoryScale,
   LinearScale,
-  PointElement,
-  LineElement,
+  BarElement,
   Title,
   Tooltip,
-  Legend,
-  Filler
+  Legend
 );
 
 interface DashboardProps {
-  cloudData: Servico[];
-  profile: UserProfile | null;
-  userEmail: string;
+  data: Servico[];
 }
 
-export function Dashboard({ cloudData, profile, userEmail }: DashboardProps) {
-  const [techFilter, setTechFilter] = useState('todos');
-
-  const techs = useMemo(() => {
-    const uniqueTechs = new Map();
-    cloudData.forEach(i => {
-      if (i.tecnico && i.tecnico_perfil) {
-        uniqueTechs.set(i.tecnico, i.tecnico_perfil.nome || i.tecnico_perfil.empresa_nome || i.tecnico);
-      }
-    });
-    return Array.from(uniqueTechs.entries()).map(([id, name]) => ({ id, name }));
-  }, [cloudData]);
-
-  const filteredData = useMemo(() => {
-    // Se for técnico, vê apenas o dele
-    if (profile?.role === 'tecnico') {
-      return cloudData.filter(i => i.tecnico === profile.id);
-    }
+export const Dashboard: React.FC<DashboardProps> = ({ data }) => {
+  const stats = useMemo(() => {
+    const total = data.length;
+    const faturamento = data
+      .filter(s => s.status === 'Liberado' || s.status === 'Indenizado')
+      .reduce((acc, s) => acc + parseFloat(s.valor || '0'), 0);
     
-    // Se for admin, usa o filtro selecionado
-    if (techFilter === 'todos') return cloudData;
-    return cloudData.filter(i => i.tecnico === techFilter);
-  }, [cloudData, techFilter, profile]);
+    const horas = data.reduce((acc, s) => acc + parseFloat(s.horas || '0'), 0);
+    const pendentes = data.filter(s => !s.sincronizado).length;
+    const sincronizados = data.filter(s => s.sincronizado).length;
 
-  const kpis = useMemo(() => {
-    const total = filteredData.length;
-    const faturamento = filteredData.reduce((acc, curr) => acc + (curr.valor || 0), 0);
-    const horas = filteredData.reduce((acc, curr) => acc + (curr.horas || 0), 0);
-    return { total, faturamento, horas };
-  }, [filteredData]);
+    return { total, faturamento, horas, pendentes, sincronizados };
+  }, [data]);
 
-  const chartData = useMemo(() => {
-    const days: Record<string, number> = {};
-    
-    // Sort data by created_at first
-    const sortedData = [...filteredData].sort((a, b) => {
-      return new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime();
-    });
-
-    sortedData.forEach(i => {
-      const date = i.created_at ? formatDate(i.created_at) : 'N/A';
-      days[date] = (days[date] || 0) + 1;
-    });
-
-    const labels = Object.keys(days);
-    const values = labels.map(l => days[l]);
-
-    return {
-      labels,
-      datasets: [
-        {
-          label: 'Serviços por Dia',
-          data: values,
-          borderColor: '#ffcc00',
-          backgroundColor: 'rgba(255, 204, 0, 0.1)',
-          fill: true,
-          tension: 0.3,
-        },
-      ],
-    };
-  }, [filteredData]);
+  const chartData = {
+    labels: data.slice(-10).map(s => s.om),
+    datasets: [
+      {
+        label: 'Valor (R$)',
+        data: data.slice(-10).map(s => parseFloat(s.valor || '0')),
+        backgroundColor: '#ffcc00',
+        borderColor: '#ffcc00',
+        borderWidth: 1,
+        borderRadius: 4,
+      },
+    ],
+  };
 
   const chartOptions = {
     responsive: true,
     maintainAspectRatio: false,
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        backgroundColor: '#141414',
+        titleColor: '#ffcc00',
+        bodyColor: '#fff',
+        borderColor: 'rgba(255,255,255,0.1)',
+        borderWidth: 1,
+      },
+    },
     scales: {
+      y: {
+        beginAtZero: true,
+        grid: { color: 'rgba(255,255,255,0.05)' },
+        ticks: { color: '#888' },
+      },
       x: {
         grid: { display: false },
-        ticks: { color: 'var(--text-muted)' }
+        ticks: { color: '#888' },
       },
-      y: {
-        grid: { color: 'var(--border)' },
-        ticks: { color: 'var(--text-muted)' }
-      }
     },
-    plugins: {
-      legend: {
-        labels: { color: 'var(--text-muted)', font: { weight: 'bold' as const } }
-      }
-    }
   };
 
   return (
-    <div className="space-y-6">
-      {profile?.role === 'admin' && (
-        <div className="card-hardware p-4">
-          <div className="flex-1">
-            <label className="text-[var(--text-muted)] text-[10px] font-black uppercase tracking-widest mb-1 block">Filtrar Técnico</label>
-            <select 
-              value={techFilter}
-              onChange={(e) => setTechFilter(e.target.value)}
-              className="input-hardware py-2.5"
-            >
-              <option value="todos">Todos os Técnicos</option>
-              {techs.map(t => (
-                <option key={t.id} value={t.id}>{t.name}</option>
-              ))}
-            </select>
+    <div className="p-4 space-y-4 pb-20">
+      <div className="flex items-center justify-between mb-4">
+        <h1 className="brand-name">DASHBOARD</h1>
+        <div className="flex items-center gap-2">
+          <div className={`w-3 h-3 rounded-full status-dot ${stats.pendentes > 0 ? 'bg-red-500' : 'bg-green-500'}`} />
+          <span className="text-[0.65rem] font-black uppercase text-muted">
+            {stats.pendentes > 0 ? 'Sincronização Pendente' : 'Sincronizado'}
+          </span>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <StatCard 
+          icon={<FileText size={18} className="text-primary" />} 
+          label="Total Ordens" 
+          value={stats.total} 
+        />
+        <StatCard 
+          icon={<TrendingUp size={18} className="text-success" />} 
+          label="Faturamento" 
+          value={`R$ ${stats.faturamento.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`} 
+        />
+        <StatCard 
+          icon={<Clock size={18} className="text-blue-400" />} 
+          label="Horas Totais" 
+          value={`${stats.horas.toFixed(1)}h`} 
+        />
+        <StatCard 
+          icon={<AlertCircle size={18} className="text-danger" />} 
+          label="Pendentes" 
+          value={stats.pendentes} 
+        />
+      </div>
+
+      <div className="card-hardware p-4 h-[250px]">
+        <h3 className="text-[0.7rem] font-black uppercase text-muted mb-4 flex items-center gap-2">
+          <TrendingUp size={14} /> Histórico Recente (Últimas 10 OMs)
+        </h3>
+        <div className="h-[180px]">
+          <Bar data={chartData} options={chartOptions} />
+        </div>
+      </div>
+
+      <div className="card-hardware p-4 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="bg-green-500/10 p-2 rounded-lg">
+            <CheckCircle2 size={20} className="text-success" />
+          </div>
+          <div>
+            <p className="text-[0.65rem] font-black uppercase text-muted">Sincronizados</p>
+            <p className="text-lg font-black">{stats.sincronizados}</p>
           </div>
         </div>
-      )}
-
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <KpiBox label="Serviços Realizados" value={kpis.total.toString()} />
-        <KpiBox label="Faturamento Total" value={formatCurrency(kpis.faturamento)} />
-        <KpiBox label="Horas Trabalhadas" value={`${kpis.horas.toFixed(1)}h`} />
-      </div>
-
-      <div className="card-hardware p-8">
-        <div className="flex items-center gap-3 mb-8">
-          <div className="w-1 h-6 bg-[var(--primary)] rounded-full" />
-          <h3 className="text-[var(--text-main)] font-black uppercase tracking-widest text-sm">Volume de Serviços</h3>
-        </div>
-        <div className="h-[350px]">
-          <Line data={chartData} options={chartOptions} />
+        <div className="text-right">
+          <p className="text-[0.65rem] font-black uppercase text-muted">Status Geral</p>
+          <p className={`text-[0.75rem] font-black ${stats.pendentes === 0 ? 'text-success' : 'text-danger'}`}>
+            {stats.pendentes === 0 ? 'BANCO ATUALIZADO' : 'AGUARDANDO SYNC'}
+          </p>
         </div>
       </div>
     </div>
   );
-}
+};
 
-function KpiBox({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="card-hardware p-8 text-center relative overflow-hidden group">
-      <div className="absolute top-0 left-0 w-full h-1 bg-[var(--primary)] opacity-20 group-hover:opacity-100 transition-opacity" />
-      <div className="text-[10px] uppercase font-black text-[var(--text-muted)] tracking-[0.2em] mb-3">{label}</div>
-      <div className="text-4xl font-black text-[var(--primary)] font-mono tracking-tighter">{value}</div>
+const StatCard: React.FC<{ icon: React.ReactNode; label: string; value: string | number }> = ({ icon, label, value }) => (
+  <div className="card-hardware p-3 flex flex-col justify-between">
+    <div className="flex items-center justify-between mb-2">
+      <span className="text-[0.65rem] font-black uppercase text-muted">{label}</span>
+      {icon}
     </div>
-  );
-}
+    <span className="text-lg font-black truncate">{value}</span>
+  </div>
+);
