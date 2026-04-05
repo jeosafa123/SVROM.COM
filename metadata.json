@@ -1,6 +1,6 @@
 {
   "name": "Vertical Locações - Oficina Smart",
-  "description": "Sistema de gerenciamento de oficina para locação de máquinas com OCR, cronômetro e exportação de dados.",
+  "description": "Sistema de gerenciamento de oficina para locação de máquinas com cadastro de empresas, impressoras e técnicos via Supabase.",
   "requestFramePermissions": [
     "camera"
   ]

@@ -9,8 +9,10 @@ import {
   Sun, 
   Settings, 
   Info,
-  ShieldCheck
+  ShieldCheck,
+  LogOut
 } from 'lucide-react';
+import { supabase } from '../lib/supabase';
 
 interface AjustesProps {
   tecnico: string;
@@ -33,9 +35,24 @@ export const Ajustes: React.FC<AjustesProps> = ({
   setTheme,
   totalRecords
 }) => {
+  const handleLogout = async () => {
+    if (confirm('Deseja realmente sair do sistema?')) {
+      await supabase.auth.signOut();
+    }
+  };
+
   return (
     <div className="p-4 space-y-4 pb-24">
-      <h1 className="brand-name">AJUSTES / EQUIPE</h1>
+      <div className="flex justify-between items-center">
+        <h1 className="brand-name">AJUSTES / EQUIPE</h1>
+        <button 
+          onClick={handleLogout}
+          className="p-2 bg-red-500/10 text-red-500 rounded-lg border border-red-500/20 hover:bg-red-500 hover:text-white transition-all"
+          title="Sair"
+        >
+          <LogOut size={20} />
+        </button>
+      </div>
 
       {/* Profile Card */}
       <div className="card-hardware p-4 space-y-4">

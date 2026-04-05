@@ -5,36 +5,102 @@ import { Dashboard } from './components/Dashboard';
 import { Lancamento } from './components/Lancamento';
 import { Lista } from './components/Lista';
 import { Ajustes } from './components/Ajustes';
+import { Cadastro } from './components/Cadastro';
 import { BottomNav } from './components/BottomNav';
 import { LoadingScreen } from './components/LoadingScreen';
+import { Login } from './components/Login';
+import { supabase } from './lib/supabase';
 import { RefreshCw } from 'lucide-react';
+import { Session } from '@supabase/supabase-js';
 
 export default function App() {
+  const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [globalLoading, setGlobalLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [data, setData] = useState<Servico[]>([]);
+  const [userProfile, setUserProfile] = useState<any>(null);
   const [tecnico, setTecnico] = useState(localStorage.getItem('oficina_tecnico') || 'Técnico');
   const [theme, setTheme] = useState<'dark' | 'light'>((localStorage.getItem('oficina_theme') as 'dark' | 'light') || 'dark');
 
   useEffect(() => {
-    // Initial loading simulation
-    const timer = setTimeout(() => {
+    // Check active session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
       setLoading(false);
-    }, 2000);
+    });
 
-    // Load data from localStorage
-    const savedData = localStorage.getItem('oficina_db');
-    if (savedData) {
-      try {
-        setData(JSON.parse(savedData));
-      } catch (e) {
-        console.error('Erro ao carregar dados:', e);
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+      if (session) {
+        fetchProfile(session.user.id);
+      } else {
+        setUserProfile(null);
+        setData([]);
       }
-    }
+    });
 
-    return () => clearTimeout(timer);
+    return () => {
+      subscription.unsubscribe();
+    };
   }, []);
+
+  const fetchProfile = async (userId: string) => {
+    const { data: profile } = await supabase.from('perfis').select('*').eq('id', userId).single();
+    setUserProfile(profile);
+    if (profile) {
+      setTecnico(profile.nome || 'Técnico');
+      fetchServicos(profile.empresa_id);
+      subscribeToServicos(profile.empresa_id);
+    }
+  };
+
+  const fetchServicos = async (empresaId: string) => {
+    const { data: servicos, error } = await supabase
+      .from('servicos')
+      .select(`
+        *,
+        tecnico_perfil:perfis!servicos_tecnico_fkey (nome)
+      `)
+      .eq('empresa_id', empresaId)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('Erro ao buscar serviços:', error);
+    } else {
+      const mapped: Servico[] = (servicos || []).map(s => ({
+        id: s.id.toString(),
+        om: s.om,
+        patrimonio: s.patrimonio || '',
+        maquina: s.equipamento,
+        horas: s.horas.toString(),
+        valor: s.valor.toString(),
+        dataAbertura: s.data_inicio || s.created_at,
+        dataEntrega: s.data_fim || '',
+        status: s.status as any,
+        indenizacao: s.status === 'Indenizado',
+        tecnico: s.tecnico_perfil?.nome || 'Técnico',
+        sincronizado: true,
+        createdAt: s.created_at
+      }));
+      setData(mapped);
+    }
+  };
+
+  const subscribeToServicos = (empresaId: string) => {
+    supabase
+      .channel('servicos_changes')
+      .on('postgres_changes', { 
+        event: '*', 
+        schema: 'public', 
+        table: 'servicos',
+        filter: `empresa_id=eq.${empresaId}`
+      }, () => {
+        fetchServicos(empresaId);
+      })
+      .subscribe();
+  };
 
   useEffect(() => {
     localStorage.setItem('oficina_tecnico', tecnico);
@@ -50,14 +116,33 @@ export default function App() {
     localStorage.setItem('oficina_db', JSON.stringify(newData));
   };
 
-  const handleSaveServico = (servico: Servico) => {
-    saveData([...data, servico]);
-    setActiveTab('lista');
+  const handleSaveServico = async (servico: Servico) => {
+    if (!userProfile) return;
+
+    const { error } = await supabase.from('servicos').insert([{
+      empresa_id: userProfile.empresa_id,
+      tecnico: session?.user.id,
+      om: servico.om,
+      patrimonio: servico.patrimonio,
+      equipamento: servico.maquina,
+      horas: parseFloat(servico.horas),
+      valor: parseFloat(servico.valor),
+      status: servico.status,
+      data_inicio: servico.dataAbertura,
+      data_fim: servico.dataEntrega
+    }]);
+
+    if (error) {
+      alert('Erro ao salvar serviço: ' + error.message);
+    } else {
+      setActiveTab('lista');
+    }
   };
 
-  const handleDeleteServico = (id: string) => {
+  const handleDeleteServico = async (id: string) => {
     if (confirm('Deseja excluir este serviço?')) {
-      saveData(data.filter(s => s.id !== id));
+      const { error } = await supabase.from('servicos').delete().eq('id', id);
+      if (error) alert('Erro ao excluir: ' + error.message);
     }
   };
 
@@ -117,11 +202,16 @@ export default function App() {
 
   if (loading) return <LoadingScreen />;
 
+  if (!session) {
+    return <Login onLoginSuccess={() => {}} />;
+  }
+
   return (
     <div className="min-h-screen max-w-md mx-auto relative">
       <main className="h-screen overflow-y-auto">
         {activeTab === 'dashboard' && <Dashboard data={data} />}
         {activeTab === 'lancamento' && <Lancamento onSave={handleSaveServico} tecnico={tecnico} />}
+        {activeTab === 'cadastro' && <Cadastro />}
         {activeTab === 'lista' && (
           <Lista 
             data={data} 

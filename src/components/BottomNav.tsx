@@ -10,6 +10,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, setActiveTab })
   const tabs = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'lancamento', label: 'Lançamento', icon: PlusCircle },
+    { id: 'cadastro', label: 'Cadastro', icon: Settings },
     { id: 'lista', label: 'Lista', icon: List },
     { id: 'ajustes', label: 'Ajustes', icon: Settings },
   ];
